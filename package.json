@@ -1,0 +1,41 @@
+{
+  "name": "@sinkerine/pi-per-model-system-prompt",
+  "version": "0.1.0",
+  "description": "Per-model system prompt injection for Pi coding agent",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "keywords": [
+    "pi-package"
+  ],
+  "files": [
+    "extensions",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./extensions/per-model-system-prompt.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=1.5.2 <2"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.6",
+    "@earendil-works/pi-coding-agent": "1.5.2",
+    "@types/node": "^22.19.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "test:unit": "vitest run tests/unit --bail=1",
+    "test:integration": "vitest run tests/integration --maxWorkers=1 --bail=1"
+  }
+}
