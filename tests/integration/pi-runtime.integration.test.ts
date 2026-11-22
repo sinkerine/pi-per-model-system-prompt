@@ -1,14 +1,32 @@
 import { unlinkSync, utimesSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { extractSystemText, httpStub } from "../support/http-stub.js";
 import { PiFixture, until } from "../support/pi-rpc.js";
 
-test("literal substitution changes only the matching model's rendered system prompt", async () => {
+test("literal substitution changes only the matching model's rendered system prompt and reaches downstream context_with_system observers", async () => {
   const stub = await httpStub();
   const pi = await PiFixture.create({ baseUrl: stub.baseUrl });
   let passed = false;
   try {
+    const captureFile = join(pi.directory, "observed-system.jsonl");
+    const observerPath = await pi.writeAgentFile(
+      "observer-ext.mjs",
+      `import { appendFileSync } from "node:fs";
+export default function observer(pi) {
+  pi.on("context_with_system", (event, ctx) => {
+    const systemMessages = event.messages.filter((m) => m.role === "system");
+    appendFileSync(${JSON.stringify(captureFile)}, JSON.stringify({
+      model: ctx.model ? \`\${ctx.model.provider}/\${ctx.model.id}\` : null,
+      systemMessages,
+    }) + "\\n");
+    return { messages: event.messages };
+  });
+}
+`,
+    );
+    (pi.extraExtensions as string[]).push(observerPath);
     await pi.writeWorkFile(
       "AGENTS.md",
       "Keep this context. Old [text]. Old [text].",
@@ -40,6 +58,30 @@ test("literal substitution changes only the matching model's rendered system pro
       original.replaceAll("Old [text]", () => "New $&"),
     );
     expect(alpha.body.tools).toEqual(beta.body.tools);
+
+    const observed = (await readFile(captureFile, "utf8"))
+      .trim()
+      .split("\n")
+      .map(
+        (line) =>
+          JSON.parse(line) as {
+            model: string | null;
+            systemMessages: Array<{
+              content: unknown;
+              sections?: Record<string, string | null>;
+            }>;
+          },
+      );
+    expect(observed).toHaveLength(2);
+    const alphaObserved = JSON.stringify(observed[0]?.systemMessages);
+    const betaObserved = JSON.stringify(observed[1]?.systemMessages);
+    expect(observed[0]?.model).toBe("fixture/alpha");
+    expect(alphaObserved).toContain("Keep this context. New $&. New $&.");
+    expect(alphaObserved).not.toContain("Old [text]");
+    expect(observed[1]?.model).toBe("fixture/group/beta");
+    expect(betaObserved).toContain(
+      "Keep this context. Old [text]. Old [text].",
+    );
     passed = true;
   } finally {
     await pi.close(passed);

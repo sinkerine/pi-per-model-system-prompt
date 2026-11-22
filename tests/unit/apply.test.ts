@@ -1,6 +1,10 @@
 import type { BeforeAgentStartEvent } from "@earendil-works/pi-coding-agent";
 import { describe, expect, test } from "vitest";
-import { applyModelPrompts, resolveModelPrompts } from "../../src/apply.js";
+import {
+  applyModelPrompts,
+  applySystemMessageSubstitutions,
+  resolveModelPrompts,
+} from "../../src/apply.js";
 import { parseModelPromptsConfig } from "../../src/config.js";
 import type { ModelPromptsConfig } from "../../src/types.js";
 
@@ -367,5 +371,150 @@ describe("apply.ts (AC4, AC5, AC6)", () => {
     expect(
       eventC.systemPromptOptions.sections.model_instructions,
     ).toBeUndefined();
+  });
+
+  test("substitute mode avoids forcing systemPrompt in before_agent_start unless combined with prepend or replace", () => {
+    const subOnly: ModelPromptsConfig = {
+      enabled: true,
+      sectionName: "model_instructions",
+      rules: [
+        {
+          id: "section",
+          enabled: true,
+          match: ["fixture/alpha"],
+          prompt: "Old text",
+          mode: "section",
+          override: false,
+        },
+        {
+          id: "sub",
+          enabled: true,
+          match: ["fixture/alpha"],
+          mode: "substitute",
+          find: "Old",
+          replacement: "New",
+          override: false,
+        },
+      ],
+    };
+    const event = makeEvent();
+    const res = applyModelPrompts(
+      event,
+      resolveModelPrompts(
+        subOnly,
+        "/tmp/model-prompts.json",
+        { provider: "fixture", id: "alpha" },
+        [],
+      ),
+    );
+    expect(res).toBeUndefined();
+    expect(event.systemPromptOptions.sections.model_instructions).toBe(
+      "Old text",
+    );
+
+    const withPrepend: ModelPromptsConfig = {
+      ...subOnly,
+      rules: [
+        {
+          id: "pre",
+          enabled: true,
+          match: ["fixture/alpha"],
+          prompt: "Old header",
+          mode: "prepend",
+          override: false,
+        },
+        ...subOnly.rules,
+      ],
+    };
+    const prependEvent = makeEvent();
+    const prependRes = applyModelPrompts(
+      prependEvent,
+      resolveModelPrompts(
+        withPrepend,
+        "/tmp/model-prompts.json",
+        { provider: "fixture", id: "alpha" },
+        [],
+      ),
+    );
+    expect(prependRes?.systemPrompt).toContain("New header");
+    expect(prependRes?.systemPrompt).toContain("New text");
+    expect(prependRes?.systemPrompt).not.toContain("Old");
+  });
+
+  test("applySystemMessageSubstitutions rewrites system content and sections while preserving non-system messages and null removals", () => {
+    const config: ModelPromptsConfig = {
+      enabled: true,
+      sectionName: "model_instructions",
+      rules: [
+        {
+          id: "sub",
+          enabled: true,
+          match: ["fixture/alpha"],
+          mode: "substitute",
+          find: "such as",
+          replacement: "including",
+          override: false,
+        },
+      ],
+    };
+    const matches = resolveModelPrompts(
+      config,
+      "/tmp/model-prompts.json",
+      { provider: "fixture", id: "alpha" },
+      [],
+    );
+
+    const messages = [
+      {
+        role: "system" as const,
+        content: "models such as classifiers",
+        sections: {
+          docs: "<docs>models such as classifiers</docs>",
+          removed: null,
+        },
+        timestamp: 1,
+      },
+      {
+        role: "user" as const,
+        content: [{ type: "text" as const, text: "keep such as in user text" }],
+        timestamp: 2,
+      },
+      {
+        role: "system" as const,
+        content: [{ type: "text" as const, text: "patch such as images" }],
+        timestamp: 3,
+      },
+    ];
+
+    const result = applySystemMessageSubstitutions(messages, matches);
+    expect(result?.messages).toBeDefined();
+    expect(result?.messages?.[0]).toEqual({
+      role: "system",
+      content: "models including classifiers",
+      sections: {
+        docs: "<docs>models including classifiers</docs>",
+        removed: null,
+      },
+      timestamp: 1,
+    });
+    expect(result?.messages?.[1]).toBe(messages[1]);
+    expect(result?.messages?.[2]).toEqual({
+      role: "system",
+      content: [{ type: "text", text: "patch including images" }],
+      timestamp: 3,
+    });
+
+    const unchanged = applySystemMessageSubstitutions(
+      [
+        {
+          role: "system" as const,
+          content: "",
+          sections: { docs: "<docs>already clean</docs>" },
+          timestamp: 1,
+        },
+      ],
+      matches,
+    );
+    expect(unchanged).toBeUndefined();
   });
 });

@@ -1,6 +1,8 @@
 import type {
   BeforeAgentStartEvent,
   BeforeAgentStartEventResult,
+  ContextEventResult,
+  ContextWithSystemEvent,
 } from "@earendil-works/pi-coding-agent";
 import { resolveRuleContent } from "./config.js";
 import { matchesModel } from "./match.js";
@@ -186,16 +188,84 @@ export function applyModelPrompts(
       : joined;
   }
 
-  if (
-    prepends.length > 0 ||
-    matches.some((match) => match.mode === "substitute")
-  ) {
-    const base = event.systemPrompt;
-    const prompt =
-      prepends.length > 0 ? `${prepends.join("\n\n")}\n\n${base}` : base;
-    const rewritten = substituteText(prompt, matches);
-    if (rewritten !== base) return { systemPrompt: rewritten };
+  if (prepends.length > 0) {
+    const prompt = `${prepends.join("\n\n")}\n\n${event.systemPrompt}`;
+    return { systemPrompt: substituteText(prompt, matches) };
   }
 
   return undefined;
+}
+
+export function applySystemMessageSubstitutions(
+  messages: ContextWithSystemEvent["messages"],
+  matches: readonly ResolvedMatch[],
+): ContextEventResult | undefined {
+  const substitutions = matches.filter((match) => match.mode === "substitute");
+  if (substitutions.length === 0) {
+    return undefined;
+  }
+
+  let anyChanged = false;
+  const nextMessages = messages.map((message) => {
+    if (message.role !== "system") {
+      return message;
+    }
+
+    let contentChanged = false;
+    let nextContent = message.content;
+    if (typeof message.content === "string") {
+      const rewritten = substituteText(message.content, substitutions);
+      if (rewritten !== message.content) {
+        contentChanged = true;
+        nextContent = rewritten;
+      }
+    } else if (Array.isArray(message.content)) {
+      const mapped = message.content.map((part) => {
+        if (part.type === "text" && typeof part.text === "string") {
+          const rewritten = substituteText(part.text, substitutions);
+          if (rewritten !== part.text) {
+            contentChanged = true;
+            return { ...part, text: rewritten };
+          }
+        }
+        return part;
+      });
+      if (contentChanged) {
+        nextContent = mapped;
+      }
+    }
+
+    let sectionsChanged = false;
+    let nextSections = message.sections;
+    if (message.sections) {
+      const updated: Record<string, string | null> = {};
+      for (const [key, value] of Object.entries(message.sections)) {
+        if (typeof value === "string") {
+          const rewritten = substituteText(value, substitutions);
+          if (rewritten !== value) {
+            sectionsChanged = true;
+          }
+          updated[key] = rewritten;
+        } else {
+          updated[key] = value;
+        }
+      }
+      if (sectionsChanged) {
+        nextSections = updated;
+      }
+    }
+
+    if (!contentChanged && !sectionsChanged) {
+      return message;
+    }
+
+    anyChanged = true;
+    return {
+      ...message,
+      ...(contentChanged ? { content: nextContent } : {}),
+      ...(sectionsChanged ? { sections: nextSections } : {}),
+    };
+  });
+
+  return anyChanged ? { messages: nextMessages } : undefined;
 }

@@ -46,6 +46,7 @@ export function getScratchRoot(): string {
 export interface PiFixtureOptions {
   baseUrl: string;
   extensionPath?: string;
+  extraExtensions?: string[];
   defaultProvider?: string;
   defaultModel?: string;
 }
@@ -61,6 +62,7 @@ export class PiFixture {
     readonly directory: string,
     readonly workDir: string,
     readonly extensionPath: string,
+    readonly extraExtensions: readonly string[],
     readonly defaultProvider: string,
     readonly defaultModel: string,
   ) {}
@@ -140,6 +142,7 @@ export class PiFixture {
       directory,
       workDir,
       options.extensionPath ?? resolve("extensions/per-model-system-prompt.ts"),
+      options.extraExtensions ?? [],
       defaultProvider,
       defaultModel,
     );
@@ -191,6 +194,7 @@ export class PiFixture {
       "--no-prompt-templates",
       "-e",
       this.extensionPath,
+      ...this.extraExtensions.flatMap((ext) => ["-e", ext]),
       "--provider",
       this.defaultProvider,
       "--model",

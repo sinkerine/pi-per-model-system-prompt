@@ -2,7 +2,11 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { applyModelPrompts, resolveModelPrompts } from "../src/apply.js";
+import {
+  applyModelPrompts,
+  applySystemMessageSubstitutions,
+  resolveModelPrompts,
+} from "../src/apply.js";
 import { ReloadableConfigStore } from "../src/config.js";
 import type { ModelRef } from "../src/types.js";
 
@@ -113,6 +117,16 @@ export default function perModelSystemPrompt(
     );
     emitWarnings(ctx, currentSources, warnings);
     return applyModelPrompts(event, matches);
+  });
+
+  pi.on("context_with_system", (event, ctx) => {
+    const { currentSources, warnings, matches } = evaluate(
+      ctx.model
+        ? { provider: ctx.model.provider, id: ctx.model.id }
+        : undefined,
+    );
+    emitWarnings(ctx, currentSources, warnings);
+    return applySystemMessageSubstitutions(event.messages, matches);
   });
 
   pi.on("session_shutdown", () => {

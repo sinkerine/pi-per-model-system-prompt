@@ -122,7 +122,7 @@ In the example above, `magpie/group/claude-sonnet` receives both `magpie-shared`
 }
 ```
 
-When a substitution changes the text, Pi sends the resulting full system prompt for that turn rather than using its native section-diff path. The rule does not change the available tools.
+Literal substitutions rewrite system message content and sections during `context_with_system` (and also apply when combined with `prepend` or `replace`). This preserves Pi's native section-diff path, leaves the available tools unchanged, and ensures downstream `context_with_system` extensions (such as `pi-btw`) see the substituted system prompt.
 
 ## Mid-Session Model Switching & Live Reload
 
