@@ -93,17 +93,36 @@ In the example above, `magpie/group/claude-sonnet` receives both `magpie-shared`
 - `match` (`string | string[]`, required): case-insensitive exact or wildcard (`*`, `?`) pattern(s) tested against both `${model.provider}/${model.id}` and `${model.id}`.
   - `*` matches across `/`, so `"magpie/*"` matches `magpie/group/gemini`.
   - `:` is matched literally, so `"ollama/qwen3:*"` matches `ollama/qwen3:32b`.
-- Content source (specify **exactly one**):
+- Content source (specify **exactly one** for modes other than `"substitute"`):
   - `prompt` (`string`): inline instruction text.
   - `file` (`string`): UTF-8 Markdown/text file path (`~/` expands to home directory; relative paths resolve from `<agentDir>`).
-- `mode` (`"section" | "append" | "guidelines" | "prepend" | "replace"`, optional, default `"section"`):
+- `mode` (`"section" | "append" | "guidelines" | "prepend" | "replace" | "substitute"`, optional, default `"section"`):
   - `"section"` (default): injects into Pi's structured `sections[tag]` (`<model_instructions>...</model_instructions>` or custom `section`), preserving Pi's native section diffing and prompt caching.
   - `"append"`: appends to `appendSystemPrompt` (`<addendum>`).
   - `"guidelines"`: appends normalized bullet items to `promptGuidelines` (`<rules>`).
   - `"prepend"`: prepends text before the rendered system prompt while keeping structured sections intact.
   - `"replace"`: replaces the base system prompt for the turn while deterministically rendering any accompanying `prepend`, `guidelines`, `append`, or `section` matches.
+  - `"substitute"`: applies literal, case-sensitive text edits to the rendered system prompt after the other matched modes. Substitutions run in rule order and replace all occurrences. If the text is absent, the rule leaves the prompt unchanged.
+- `find` (non-empty string) and `replacement` (string, may be empty to delete text): both required for `"substitute"`. Do not set `prompt`, `file`, or `section` on a substitution rule.
 - `section` (`string`, optional): custom XML tag override for `"section"` mode (same tag validation rules as `sectionName`).
-- `override` (`boolean`, optional, default `false`): when `true` and this rule matches with valid non-empty content, discards all earlier matched rules' contributions before adding this rule.
+- `override` (`boolean`, optional, default `false`): when `true` and this rule resolves successfully, discards all earlier matched rules' contributions before adding this rule.
+
+### Literal Substitution Example
+
+```json
+{
+  "rules": [
+    {
+      "match": "magpie/group/gemini",
+      "mode": "substitute",
+      "find": "non-LLM models such as classifiers and image models",
+      "replacement": "non-LLM models including classifiers and image models"
+    }
+  ]
+}
+```
+
+When a substitution changes the text, Pi sends the resulting full system prompt for that turn rather than using its native section-diff path. The rule does not change the available tools.
 
 ## Mid-Session Model Switching & Live Reload
 

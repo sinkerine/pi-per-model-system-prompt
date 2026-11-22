@@ -42,6 +42,8 @@ const KNOWN_RULE_KEYS = new Set([
   "mode",
   "section",
   "override",
+  "find",
+  "replacement",
 ]);
 
 function emptyConfig(): ModelPromptsConfig {
@@ -190,6 +192,52 @@ export function parseModelPromptsConfig(
         continue;
       }
 
+      if (r.override !== undefined && typeof r.override !== "boolean") {
+        warnings.push(`${id}: "override" must be a boolean`);
+        continue;
+      }
+      const base = {
+        id,
+        enabled: ruleEnabled,
+        match,
+        override: r.override === true,
+      };
+
+      if (r.mode === "substitute") {
+        if (typeof r.find !== "string" || r.find.length === 0) {
+          warnings.push(`${id}: "find" must be a non-empty string`);
+          continue;
+        }
+        if (typeof r.replacement !== "string") {
+          warnings.push(`${id}: "replacement" must be a string`);
+          continue;
+        }
+        if (
+          r.prompt !== undefined ||
+          r.file !== undefined ||
+          r.section !== undefined
+        ) {
+          warnings.push(
+            `${id}: "substitute" does not accept "prompt", "file", or "section"`,
+          );
+          continue;
+        }
+        rules.push({
+          ...base,
+          mode: "substitute",
+          find: r.find,
+          replacement: r.replacement,
+        });
+        continue;
+      }
+
+      if (r.find !== undefined || r.replacement !== undefined) {
+        warnings.push(
+          `${id}: "find" and "replacement" require "substitute" mode`,
+        );
+        continue;
+      }
+
       const hasPromptKey = r.prompt !== undefined;
       const hasFileKey = r.file !== undefined;
       if (hasPromptKey === hasFileKey) {
@@ -218,11 +266,6 @@ export function parseModelPromptsConfig(
         mode = r.mode as InjectionMode;
       }
 
-      if (r.override !== undefined && typeof r.override !== "boolean") {
-        warnings.push(`${id}: "override" must be a boolean`);
-        continue;
-      }
-
       let section: string | undefined;
       if (r.section !== undefined) {
         if (typeof r.section !== "string" || r.section.trim().length === 0) {
@@ -240,14 +283,11 @@ export function parseModelPromptsConfig(
       }
 
       rules.push({
-        id,
-        enabled: ruleEnabled,
-        match,
+        ...base,
         prompt: hasPromptKey ? (r.prompt as string) : undefined,
         file: hasFileKey ? (r.file as string) : undefined,
         mode,
         section,
-        override: r.override === true,
       });
     }
   }
@@ -318,6 +358,8 @@ export function resolveRuleContent(
   resolveFile?: FileResolver,
   activeFileSigs?: Map<string, string>,
 ): string | undefined {
+  if (rule.mode === "substitute") return rule.replacement;
+
   if (rule.prompt !== undefined) {
     const trimmed = rule.prompt.replace(/^\uFEFF/, "").trim();
     if (!trimmed) {

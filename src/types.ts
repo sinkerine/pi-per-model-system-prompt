@@ -10,16 +10,18 @@ export interface ModelRef {
   id: string;
 }
 
-export interface ModelPromptRule {
+interface RuleBase {
   id: string;
   enabled: boolean;
   match: string[];
-  prompt?: string;
-  file?: string;
-  mode: InjectionMode;
-  section?: string;
   override: boolean;
 }
+
+export type ModelPromptRule = RuleBase &
+  (
+    | { mode: InjectionMode; prompt?: string; file?: string; section?: string }
+    | { mode: "substitute"; find: string; replacement: string }
+  );
 
 export interface ModelPromptsConfig {
   enabled: boolean;
@@ -27,14 +29,18 @@ export interface ModelPromptsConfig {
   rules: ModelPromptRule[];
 }
 
-export interface ResolvedMatch {
+interface ResolvedMatchBase {
   id: string;
   match: string[];
-  mode: InjectionMode;
-  sectionTag: string;
-  content: string;
   source: string;
+  content: string;
 }
+
+export type ResolvedMatch = ResolvedMatchBase &
+  (
+    | { mode: InjectionMode; sectionTag: string }
+    | { mode: "substitute"; find: string }
+  );
 
 export interface FileResolveResult {
   content?: string;

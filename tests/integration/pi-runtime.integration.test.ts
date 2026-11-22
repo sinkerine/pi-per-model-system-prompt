@@ -4,6 +4,49 @@ import { expect, test } from "vitest";
 import { extractSystemText, httpStub } from "../support/http-stub.js";
 import { PiFixture, until } from "../support/pi-rpc.js";
 
+test("literal substitution changes only the matching model's rendered system prompt", async () => {
+  const stub = await httpStub();
+  const pi = await PiFixture.create({ baseUrl: stub.baseUrl });
+  let passed = false;
+  try {
+    await pi.writeWorkFile(
+      "AGENTS.md",
+      "Keep this context. Old [text]. Old [text].",
+    );
+    await pi.writeModelPrompts({
+      rules: [
+        { match: "fixture/*", prompt: "Keep this section." },
+        {
+          match: "fixture/alpha",
+          mode: "substitute",
+          find: "Old [text]",
+          replacement: "New $&",
+        },
+      ],
+    });
+    await pi.start();
+    await pi.prompt("turn on alpha");
+    await pi.setModel("fixture", "group/beta");
+    await pi.prompt("turn on beta");
+
+    const [alpha, beta] = stub.captures;
+    if (!alpha || !beta) throw new Error("Expected both request captures");
+    const original = extractSystemText(beta);
+    expect(original).toContain("Keep this context. Old [text]. Old [text].");
+    expect(original).toContain(
+      "<model_instructions>\nKeep this section.\n</model_instructions>",
+    );
+    expect(extractSystemText(alpha)).toBe(
+      original.replaceAll("Old [text]", () => "New $&"),
+    );
+    expect(alpha.body.tools).toEqual(beta.body.tools);
+    passed = true;
+  } finally {
+    await pi.close(passed);
+    await stub.close();
+  }
+});
+
 test("AC1: matching global rule beats decoy <cwd>/.pi/model-prompts.json, and deleting global config removes prompt silently", async () => {
   const stub = await httpStub();
   const pi = await PiFixture.create({ baseUrl: stub.baseUrl });

@@ -35,20 +35,28 @@ export function resolveModelPrompts(
       resolveFile,
       activeFileSigs,
     );
-    if (!content) continue;
+    if (
+      content === undefined ||
+      (content === "" && rule.mode !== "substitute")
+    ) {
+      continue;
+    }
+
+    const base = { id: rule.id, match: rule.match, content };
+    const resolved: ResolvedMatch =
+      rule.mode === "substitute"
+        ? { ...base, mode: rule.mode, find: rule.find, source: "inline" }
+        : {
+            ...base,
+            mode: rule.mode,
+            sectionTag: rule.section ?? config.sectionName,
+            source: rule.file ? `file:${rule.file}` : "inline",
+          };
 
     if (rule.override) {
       activeMatches.length = 0;
     }
-
-    activeMatches.push({
-      id: rule.id,
-      match: rule.match,
-      mode: rule.mode,
-      sectionTag: rule.section ?? config.sectionName,
-      content,
-      source: rule.file ? `file:${rule.file}` : "inline",
-    });
+    activeMatches.push(resolved);
   }
 
   return activeMatches;
@@ -63,6 +71,18 @@ function normalizeGuidelineLines(content: string): string[] {
     if (stripped) lines.push(stripped);
   }
   return lines;
+}
+
+function substituteText(
+  prompt: string,
+  matches: readonly ResolvedMatch[],
+): string {
+  for (const match of matches) {
+    if (match.mode === "substitute") {
+      prompt = prompt.replaceAll(match.find, () => match.content);
+    }
+  }
+  return prompt;
 }
 
 export function applyModelPrompts(
@@ -118,7 +138,7 @@ export function applyModelPrompts(
       blocks.push(`<${tag}>\n${fragments.join("\n\n")}\n</${tag}>`);
     }
 
-    return { systemPrompt: blocks.join("\n\n") };
+    return { systemPrompt: substituteText(blocks.join("\n\n"), matches) };
   }
 
   const guidelines: string[] = [];
@@ -166,10 +186,15 @@ export function applyModelPrompts(
       : joined;
   }
 
-  if (prepends.length > 0) {
-    return {
-      systemPrompt: `${prepends.join("\n\n")}\n\n${event.systemPrompt}`,
-    };
+  if (
+    prepends.length > 0 ||
+    matches.some((match) => match.mode === "substitute")
+  ) {
+    const base = event.systemPrompt;
+    const prompt =
+      prepends.length > 0 ? `${prepends.join("\n\n")}\n\n${base}` : base;
+    const rewritten = substituteText(prompt, matches);
+    if (rewritten !== base) return { systemPrompt: rewritten };
   }
 
   return undefined;
